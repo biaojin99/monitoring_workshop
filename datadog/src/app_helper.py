@@ -6,6 +6,10 @@ import time
 # StatsD is a simple protocol for sending metrics over UDP
 # It's lightweight and doesn't block application execution
 statsd = DogStatsd(host="datadog", port=8125)
+# Add these new business metric names
+PURCHASE_AMOUNT_METRIC = "ecommerce.purchase_amount"
+PURCHASE_COUNT_METRIC = "ecommerce.purchase_count"
+PROCESSING_TIME_METRIC = "ecommerce.processing_time"
 
 # Define metric names
 REQUEST_LATENCY_METRIC_NAME = "request_latency_seconds_hist"
@@ -107,6 +111,71 @@ def record_request_data(response):
     
     return response
 
+def record_purchase_metrics(response):
+    """Dedicated handler for purchase business metrics"""
+    # Always return the response, even if None
+    if response is None:
+        return response
+    
+    try:
+        # Only process purchase requests
+        if request.path == "/purchase" and request.method == "POST":
+            # Get purchase data from request
+            purchase_amount = getattr(request, "purchase_amount", 0)
+            processing_time = getattr(request, "processing_time", 0)
+            quantity = getattr(request, "quantity", 0)
+            product_id = getattr(request, "product_id", "unknown")
+            
+            # 1. Revenue tracking (gauge for current value)
+            statsd.gauge(
+                PURCHASE_AMOUNT_METRIC,
+                purchase_amount,
+                tags=[
+                    "service:webapp",
+                    "currency:USD",
+                    f"amount_range:{get_amount_range(purchase_amount)}",
+                    f"product_id:{product_id}"
+                ]
+            )
+            
+            # 2. Purchase count (counter automatically calculates rate)
+            statsd.increment(
+                PURCHASE_COUNT_METRIC,
+                value=quantity,  # Can increment by quantity, not just 1
+                tags=[
+                    "service:webapp",
+                    "transaction_type:purchase",
+                    f"product_id:{product_id}"
+                ]
+            )
+            
+            # 3. Processing time distribution (Datadog distribution for better percentiles)
+            statsd.distribution(
+                PROCESSING_TIME_METRIC,
+                processing_time,
+                tags=[
+                    "service:webapp",
+                    "operation:purchase"
+                ]
+            )
+    
+    except Exception as e:
+        # Don't let metrics collection break the response
+        print(f"Purchase metrics collection error: {e}")
+    
+    return response
+
+def get_amount_range(amount):
+    """Helper function to categorize purchase amounts"""
+    if amount < 10:
+        return "small"
+    elif amount < 50:
+        return "medium"
+    elif amount < 200:
+        return "large"
+    else:
+        return "premium"
+
 
 def setup_datadog_metrics(app):
     """Setup Datadog monitoring for the Flask application"""
@@ -115,3 +184,5 @@ def setup_datadog_metrics(app):
     # Register stop_timer first to have it execute before record_request_data
     app.after_request(stop_timer)
     app.after_request(record_request_data) 
+    # Business-specific metrics (separate handler)
+    app.after_request(record_purchase_metrics)

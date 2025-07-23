@@ -203,5 +203,40 @@ def database_query():
         logger.error(f"Database query error: {e}")
         return {"error": "Database query failed", "details": str(e)}, 500
 
+@app.route("/purchase", methods=["POST"])
+def purchase():
+    """Simulate a purchase transaction with business metrics"""
+    try:
+        data = request.get_json() or {}
+        user_id = data.get("user_id", 1)
+        product_id = data.get("product_id", 1)
+        quantity = data.get("quantity", 1)
+        price_per_item = data.get("price", 19.99)
+        
+        # Calculate business metrics
+        total_amount = quantity * price_per_item
+        processing_time = random.uniform(0.1, 2.0)  # Simulate processing time
+        
+        # Simulate processing delay
+        time.sleep(processing_time)
+        
+        # Store metrics in request for later use
+        request.purchase_amount = total_amount
+        request.processing_time = processing_time
+        request.quantity = quantity
+        request.product_id = product_id
+        
+        return {
+            "message": "Purchase successful",
+            "transaction_id": f"txn_{random.randint(10000, 99999)}",
+            "amount": total_amount,
+            "processing_time": processing_time,
+            "product_id": product_id
+        }, 201
+        
+    except Exception as e:
+        logger.error(f"Purchase failed: {e}")
+        return {"error": "Purchase failed", "details": str(e)}, 500
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=3001, debug=True) 
