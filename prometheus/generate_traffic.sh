@@ -7,74 +7,77 @@ echo "Starting traffic generation for Prometheus monitoring demo..."
 
 BASE_URL="http://localhost:3001"
 
-# Function to generate random user data
-generate_user() {
-    local username="prom_user_$(date +%s)_$RANDOM"
-    local email="${username}@prometheus.example.com"
-    curl -s -X POST "${BASE_URL}/users" \
-        -H "Content-Type: application/json" \
-        -d "{\"username\":\"${username}\", \"email\":\"${email}\"}" > /dev/null
-}
-
 # Function to generate different types of requests
 generate_requests() {
     local count=${1:-100}
     echo "Generating ${count} mixed requests for Prometheus monitoring..."
+    echo "📊 Monitor metrics at: http://localhost:9090 (Prometheus) and http://localhost:3000 (Grafana)"
     
     for i in $(seq 1 $count); do
-        # Mix of different endpoints
-        case $((i % 8)) in
-            0)
-                # Health check
+        # Mix of different endpoints with weighted distribution for realistic scenarios
+        case $((i % 9)) in
+            0|1)
+                # Health check (most common - 22%)
                 curl -s "${BASE_URL}/health" > /dev/null
+                echo -n "."
                 ;;
-            1)
-                # Get users
-                curl -s "${BASE_URL}/users" > /dev/null
-                ;;
-            2)
-                # Create user
-                generate_user
-                ;;
-            3)
-                # Delay endpoint with random delay
-                delay=$(echo "scale=2; $RANDOM/32767*3" | bc)
-                curl -s "${BASE_URL}/delay?seconds=${delay}" > /dev/null
+            2|3)
+                # Root endpoint (common - 22%)
+                curl -s "${BASE_URL}/" > /dev/null
+                echo -n "/"
                 ;;
             4)
-                # Error endpoint with random error rate
-                rate=$((RANDOM % 100))
-                curl -s "${BASE_URL}/error?rate=${rate}" > /dev/null
+                # Business metrics endpoint (11%)
+                operations=("user_login" "product_view" "cart_add" "checkout" "payment")
+                operation=${operations[$((RANDOM % ${#operations[@]}))]}
+                curl -s "${BASE_URL}/business-metrics?operation=${operation}" > /dev/null
+                echo -n "📊"
                 ;;
             5)
-                # CPU intensive
-                iterations=$((RANDOM % 50000 + 10000))
-                curl -s "${BASE_URL}/cpu-intensive?iterations=${iterations}" > /dev/null
+                # Delay endpoint with realistic delay (11%)
+                delay_int=$((RANDOM % 20 + 5))
+                delay_frac=$((RANDOM % 10))
+                delay="${delay_int}.${delay_frac}"
+                curl -s "${BASE_URL}/delay?seconds=${delay}" > /dev/null
+                echo -n "⏱"
                 ;;
             6)
-                # Memory usage
-                size=$((RANDOM % 20 + 5))
-                curl -s "${BASE_URL}/memory-usage?size=${size}" > /dev/null
+                # Error endpoint with moderate error rate (11%)
+                rate=$((RANDOM % 60 + 20))  # 20-80% error rate
+                curl -s "${BASE_URL}/error?rate=${rate}" > /dev/null
+                echo -n "❌"
                 ;;
             7)
-                # Database query
-                query_type=$((RANDOM % 2))
-                if [ $query_type -eq 0 ]; then
-                    curl -s "${BASE_URL}/database-query?type=simple" > /dev/null
-                else
-                    curl -s "${BASE_URL}/database-query?type=complex" > /dev/null
-                fi
+                # CPU intensive with reasonable load (11%)
+                iterations=$((RANDOM % 30000 + 20000))
+                curl -s "${BASE_URL}/cpu-intensive?iterations=${iterations}" > /dev/null
+                echo -n "🔥"
+                ;;
+            8)
+                # Memory usage with reasonable size (12%)
+                size=$((RANDOM % 15 + 5))  # 5-20MB
+                curl -s "${BASE_URL}/memory-usage?size=${size}" > /dev/null
+                echo -n "💾"
                 ;;
         esac
         
-        # Random delay between requests (0.1 to 2 seconds)
-        sleep_time=$(echo "scale=2; $RANDOM/32767*1.9+0.1" | bc)
-        sleep $sleep_time
+        # Shorter, more realistic delay between requests
+        sleep_ms=$((RANDOM % 800 + 200))  # 200-1000ms
+        sleep_seconds=$(echo "scale=3; $sleep_ms/1000" | bc -l 2>/dev/null || echo "0.5")
+        sleep $sleep_seconds
         
         if [ $((i % 10)) -eq 0 ]; then
-            echo "Completed ${i}/${count} requests (check Prometheus at http://localhost:9090)"
+            echo ""
+            echo "✅ Completed ${i}/${count} requests"
+            echo "   📈 Check metrics: webapp_endpoint_counter, http_request_duration_seconds"
         fi
     done
+    echo ""
+    echo "🎯 Generated realistic traffic pattern with:"
+    echo "   • 44% normal operations (health/root checks)"
+    echo "   • 11% business metrics (custom metrics demo)"
+    echo "   • 22% latency tests (performance monitoring)"
+    echo "   • 23% resource/error tests (resource/error monitoring)"
 }
 
 # Function to generate sustained load with varying patterns
@@ -88,12 +91,11 @@ generate_sustained_load() {
     while [ $(date +%s) -lt $end_time ]; do
         # Change load pattern every 30 seconds
         if [ $(($(date +%s) % 30)) -eq 0 ]; then
-            phase=$(((phase + 1) % 4))
+            phase=$(((phase + 1) % 3))
             case $phase in
                 0) echo "Phase 1: Normal load pattern" ;;
                 1) echo "Phase 2: High CPU load pattern" ;;
                 2) echo "Phase 3: High error rate pattern" ;;
-                3) echo "Phase 4: Database heavy pattern" ;;
             esac
         fi
         
@@ -101,38 +103,23 @@ generate_sustained_load() {
         case $phase in
             0)
                 # Normal load
-                for j in $(seq 1 3); do
-                    (curl -s "${BASE_URL}/" > /dev/null) &
-                    (curl -s "${BASE_URL}/health" > /dev/null) &
-                done
+                curl -s "${BASE_URL}/health" > /dev/null
                 ;;
             1)
-                # CPU intensive load
-                for j in $(seq 1 2); do
-                    (curl -s "${BASE_URL}/cpu-intensive?iterations=30000" > /dev/null) &
-                done
+                # High CPU load
+                iterations=$((RANDOM % 50000 + 50000))
+                curl -s "${BASE_URL}/cpu-intensive?iterations=${iterations}" > /dev/null
                 ;;
             2)
                 # High error rate
-                for j in $(seq 1 4); do
-                    (curl -s "${BASE_URL}/error?rate=70" > /dev/null) &
-                done
-                ;;
-            3)
-                # Database heavy
-                for j in $(seq 1 5); do
-                    (curl -s "${BASE_URL}/database-query?type=complex" > /dev/null) &
-                    (curl -s "${BASE_URL}/users" > /dev/null) &
-                done
+                curl -s "${BASE_URL}/error?rate=80" > /dev/null
                 ;;
         esac
         
-        # Wait for background jobs to complete
-        wait
-        
-        # Short delay between batches
-        sleep 1
+        sleep 0.5
     done
+    
+    echo "✅ Sustained load test completed"
 }
 
 # Function to test specific Prometheus metrics
@@ -210,23 +197,7 @@ test_memory_usage() {
     done
 }
 
-test_database() {
-    local count=${1:-10}
-    echo "Testing database endpoints (${count} requests)..."
-    echo "Monitor database metrics in Prometheus and Grafana during this test..."
-    
-    for i in $(seq 1 $count); do
-        if [ $((i % 2)) -eq 0 ]; then
-            echo "Running complex database query ${i}/${count}..."
-            curl -s "${BASE_URL}/database-query?type=complex" > /dev/null
-        else
-            echo "Running simple database query ${i}/${count}..."
-            curl -s "${BASE_URL}/database-query?type=simple" > /dev/null
-        fi
-        echo "Check database_queries_total and database_query_duration_seconds metrics"
-        sleep 0.5
-    done
-}
+# Database functionality removed - no longer available
 
 test_delay() {
     local count=${1:-10}
@@ -242,23 +213,7 @@ test_delay() {
     done
 }
 
-test_users() {
-    local count=${1:-10}
-    echo "Testing user endpoints (${count} requests)..."
-    echo "Monitor API endpoint metrics in Prometheus and Grafana during this test..."
-    
-    for i in $(seq 1 $count); do
-        if [ $((i % 3)) -eq 0 ]; then
-            echo "Creating new user ${i}/${count}..."
-            generate_user
-        else
-            echo "Fetching users ${i}/${count}..."
-            curl -s "${BASE_URL}/users" > /dev/null
-        fi
-        echo "Check http_requests_total metric for /users endpoint"
-        sleep 0.3
-    done
-}
+# User endpoints removed - no longer available
 
 test_errors() {
     local count=${1:-30}  # Increased default from 10 to 30 for better random distribution
@@ -283,7 +238,81 @@ test_errors() {
     echo "    $0 error-test 50"
 }
 
-
+# New function for demonstrating monitoring scenarios
+demo_monitoring_scenarios() {
+    echo "🎯 Demonstrating key monitoring scenarios..."
+    echo "📊 Monitor in real-time: http://localhost:9090 (Prometheus) | http://localhost:3000 (Grafana)"
+    echo ""
+    
+    echo "📈 Scenario 1: Normal baseline traffic (30 seconds)..."
+    for i in $(seq 1 30); do
+        curl -s "${BASE_URL}/health" > /dev/null &
+        curl -s "${BASE_URL}/" > /dev/null &
+        sleep 1
+    done
+    wait
+    echo "   ✅ Baseline established - check request rate metrics"
+    echo ""
+    
+    echo "⏱ Scenario 2: Latency spike simulation (20 requests)..."
+    for i in $(seq 1 20); do
+        delay=$(echo "scale=1; 2+$i*0.1" | bc)  # Gradually increasing delay 2.1s to 4.0s
+        echo "   Request $i: ${delay}s delay"
+        curl -s "${BASE_URL}/delay?seconds=${delay}" > /dev/null
+        sleep 0.5
+    done
+    echo "   ✅ Latency spike complete - check http_request_duration_seconds p95/p99"
+    echo ""
+    
+    echo "❌ Scenario 3: Error rate spike (30 requests)..."
+    for i in $(seq 1 30); do
+        if [ $i -le 10 ]; then
+            rate=90  # High error rate
+        elif [ $i -le 20 ]; then
+            rate=50  # Medium error rate
+        else
+            rate=10  # Low error rate
+        fi
+        echo "   Request $i: ${rate}% error rate"
+        curl -s "${BASE_URL}/error?rate=${rate}" > /dev/null
+        sleep 0.3
+    done
+    echo "   ✅ Error spike complete - check error rate: rate(http_requests_total{status=~\"4..|5..\"}[5m])"
+    echo ""
+    
+    echo "🔥 Scenario 4: Resource consumption spike..."
+    for i in $(seq 1 5); do
+        echo "   CPU spike $i/5..."
+        curl -s "${BASE_URL}/cpu-intensive?iterations=80000" > /dev/null &
+        echo "   Memory spike $i/5..."
+        curl -s "${BASE_URL}/memory-usage?size=25" > /dev/null &
+    done
+    wait
+    echo "   ✅ Resource spike complete - check system resource metrics"
+    echo ""
+    
+    echo "🔄 Scenario 5: Return to normal (recovery verification)..."
+    for i in $(seq 1 20); do
+        curl -s "${BASE_URL}/health" > /dev/null &
+        curl -s "${BASE_URL}/users" > /dev/null &
+        sleep 0.8
+    done
+    wait
+    echo "   ✅ Recovery complete - verify metrics return to baseline"
+    echo ""
+    
+    echo "🎉 All monitoring scenarios complete!"
+    echo "📋 Key metrics to check:"
+    echo "   • webapp_endpoint_counter - Request counts by endpoint"
+    echo "   • http_request_duration_seconds - Response time percentiles"
+    echo "   • http_requests_total - Success/error rates by status code"
+    echo "   • up - Service availability"
+    echo ""
+    echo "🚨 Suggested alerts to test:"
+    echo "   • High latency: http_request_duration_seconds{quantile=\"0.95\"} > 2"
+    echo "   • High error rate: rate(http_requests_total{status=~\"5..\"}[5m]) > 0.1"
+    echo "   • Service down: up == 0"
+}
 
 # Main execution
 case "${1}" in
@@ -328,6 +357,10 @@ case "${1}" in
         count=${2:-30}
         test_errors $count
         ;;
+    "demo"|"scenarios")
+        echo "Running monitoring scenarios demo..."
+        demo_monitoring_scenarios
+        ;;
     "full")
         echo "Running full Prometheus test suite..."
         echo "1. Testing metrics..."
@@ -340,21 +373,22 @@ case "${1}" in
         generate_sustained_load 120
         ;;
     *)
-        echo "Usage: $0 {quick|sustained|errors|metrics|cpu|memory|database|delay|users|error-test|full} [count]"
+        echo "Usage: $0 {quick|sustained|errors|metrics|demo|cpu|memory|delay|error-test|full} [count]"
         echo ""
-        echo "General tests:"
-        echo "  quick              - Generate 50 mixed requests"
+        echo "🚀 Recommended tests:"
+        echo "  demo|scenarios     - 🎯 Complete monitoring demo with 5 realistic scenarios"
+        echo "  quick              - Generate 50 mixed requests with realistic patterns"
+        echo "  full               - Run complete test suite"
+        echo ""
+        echo "📊 General tests:"
         echo "  sustained [duration] - Generate sustained load (default: 300 seconds)"
         echo "  errors             - Generate error scenarios for alerting"
         echo "  metrics            - Test specific Prometheus metrics"
-        echo "  full               - Run complete test suite"
         echo ""
-        echo "Specific endpoint tests:"
+        echo "🔧 Specific endpoint tests:"
         echo "  cpu [count]        - Test CPU-intensive endpoint (default: 10)"
         echo "  memory [count]     - Test memory usage endpoint (default: 10)"
-        echo "  database [count]   - Test database queries (default: 10)"
         echo "  delay [count]      - Test delay endpoint (default: 10)"
-        echo "  users [count]      - Test user endpoints (default: 10)"
         echo "  error-test [count] - Test random error codes (400/404/500) (default: 30)"
         echo ""
         echo "Monitoring URLs:"
@@ -362,13 +396,13 @@ case "${1}" in
         echo "  Grafana:    http://localhost:3000 (admin/foobar)"
         echo "  App metrics: http://localhost:3001/metrics"
         echo ""
-        echo "Examples:"
-        echo "  $0 quick           - Quick mixed test"
+        echo "💡 Examples:"
+        echo "  $0 demo            - 🌟 Best demo: Complete monitoring scenarios"
+        echo "  $0 quick           - Quick mixed test with realistic patterns"
         echo "  $0 cpu 20          - Run 20 CPU-intensive tests"
-        echo "  $0 memory 15       - Run 15 memory tests with metric hints"
-        echo "  $0 database 10     - Run 10 database tests"
-        echo "  $0 sustained 600   - 10-minute sustained load with phases"
-        echo "  $0 metrics         - Test core Prometheus metrics"
+        echo "  $0 memory 15       - Run 15 memory tests"
+        echo "  $0 sustained 600   - 10-minute sustained load test"
+        echo "  $0 error-test 50   - Generate 50 error scenarios"
         exit 1
         ;;
 esac

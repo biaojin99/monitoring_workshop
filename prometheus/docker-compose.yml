@@ -1,9 +1,6 @@
-version: "3.8"
-
 volumes:
   prometheus_data: {}
   grafana_data: {}
-  postgres_data: {} # Volume to persist PostgreSQL data
 
 services:
   statsd:
@@ -36,11 +33,11 @@ services:
     ports:
       - "9090:9090"
     depends_on:
-      postgres-exporter:
-        condition: service_healthy
       statsd:
         condition: service_healthy
       node-exporter:
+        condition: service_healthy
+      cadvisor:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
@@ -70,6 +67,28 @@ services:
       timeout: 10s
       retries: 3
 
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: prometheus-cadvisor
+    expose:
+      - "8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   grafana:
     image: grafana/grafana
     container_name: prometheus-grafana
@@ -92,68 +111,18 @@ services:
       timeout: 10s
       retries: 3
 
-  postgres:
-    image: postgres:15
-    container_name: prometheus-postgres
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init_db:/docker-entrypoint-initdb.d # Mount folder for initialization scripts
-    environment:
-      - POSTGRES_DB=postgres
-      - POSTGRES_USER=root
-      - POSTGRES_PASSWORD=changeme
-    ports:
-      - "5432:5432"
-    command: >
-      postgres
-      -c shared_preload_libraries=pg_stat_statements
-      -c track_activity_query_size=4096
-      -c pg_stat_statements.track=ALL
-      -c pg_stat_statements.max=10000
-      -c pg_stat_statements.track_utility=off
-      -c track_io_timing=on
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U root -d postgres"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  postgres-exporter:
-    image: wrouesnel/postgres_exporter
-    container_name: prometheus-postgres-exporter
-    environment:
-      DATA_SOURCE_NAME: "postgresql://root:changeme@prometheus-postgres:5432/postgres?sslmode=disable"
-    ports:
-      - "9187:9187"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9187/metrics"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
   webapp:
     build: .
     container_name: prometheus-webapp
     ports:
       - "3001:3001"
     environment:
-      - DB_HOST=prometheus-postgres
-      - DB_NAME=postgres
-      - DB_USER=root
-      - DB_PASSWORD=changeme
-      - DB_PORT=5432
+      - APP_ENV=production
     depends_on:
-      postgres:
-        condition: service_healthy
       prometheus:
         condition: service_healthy
       statsd:
         condition: service_healthy
-    volumes:
-      - ./src:/app # Mount source code for development
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/health"]

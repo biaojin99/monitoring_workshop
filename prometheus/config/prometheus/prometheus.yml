@@ -35,8 +35,9 @@ scrape_configs:
       - targets: ['webapp:3001']
     metrics_path: '/metrics'
 
-  # Scrape PostgreSQL Exporter for database metrics
-  - job_name: 'postgres-exporter'
+  # Scrape cAdvisor for Docker container metrics
+  - job_name: 'cadvisor'
     scrape_interval: 5s
     static_configs:
-      - targets: ['postgres-exporter:9187'] 
+      - targets: ['cadvisor:8080']
+    metrics_path: '/metrics' 
