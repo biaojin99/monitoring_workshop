@@ -387,19 +387,20 @@ This exercise teaches you to create Grafana dashboards for the same Golden Signa
      ```promql
      histogram_quantile(0.50, rate(flask_http_request_duration_seconds_bucket[5m]))
      ```
-   - **Legend A**: "p50 - {{path}}"
+   - **Legend A**: `p50 - {{path}}`
    - **Query B** (click + Add query):
      ```promql
      histogram_quantile(0.95, rate(flask_http_request_duration_seconds_bucket[5m]))
      ```
-   - **Legend B**: "p95 - {{path}}"
+   - **Legend B**: `p95 - {{path}}`
    - **Query C**:
      ```promql
      histogram_quantile(0.99, rate(flask_http_request_duration_seconds_bucket[5m]))
      ```
-   - **Legend C**: "p99 - {{path}}"
+   - **Legend C**: `p99 - {{path}}`
    - **Unit**: Set to "seconds (s)"
-   - Click **Back to dashboard** to see the added panel
+   - **Note**: The `{{path}}` template will show which endpoint each line represents, creating legends like "p50 - /delay", "p95 - /error", etc.
+   - Click **Apply**
 
 #### Part D: Error Rate Monitoring
 
